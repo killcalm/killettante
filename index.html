@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Killettante Commission</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card-bg: #1a1d24;
+    --text: #e8e8e8;
+    --muted: #9aa0aa;
+    --accent: #6ea8fe;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px; 
+  }
+  header {
+    max-width: 1200px;
+    margin: 0 auto 24px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin: 0 0 4px;
+  }
+  #status {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  #gallery {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--card-bg);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+  .card:hover {
+    transform: translateY(-3px);
+  }
+  .card img {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    display: block;
+    background: #000;
+  }
+  .card .name {
+    padding: 8px 10px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.9);
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 24px;
+    flex-direction: column;
+    gap: 16px;
+  }
+  #lightbox.open { display: flex; }
+  #lightbox-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    max-width: 100%;
+    max-height: 100%;
+  }
+  #lightbox img {
+    max-width: 80vw;
+    max-height: 80vh;
+    width: auto;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  }
+  #lightbox-filename {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  #lightbox-actions {
+    display: flex;
+    gap: 12px;
+  }
+  .lb-btn {
+    background: var(--accent);
+    color: #0f1115;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: opacity 0.15s ease;
+  }
+  .lb-btn:hover {
+    opacity: 0.85;
+  }
+  .lb-btn.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--muted);
+  }
+  #lightbox-close {
+    position: absolute;
+    top: 20px;
+    right: 24px;
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 2rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 4px 8px;
+  }
+  .error {
+    color: #ff8080;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📁 이미지 갤러리</h1>
+  <div id="status">불러오는 중...</div>
+</header>
+
+<div id="gallery"></div>
+
+<div id="lightbox">
+  <button id="lightbox-close" aria-label="닫기">&times;</button>
+  <div id="lightbox-content">
+    <img id="lightbox-img" src="" alt="">
+    <div id="lightbox-filename"></div>
+    <div id="lightbox-actions">
+      <a id="lightbox-download" class="lb-btn" href="" download target="_blank" rel="noopener">⬇ 다운로드</a>
+      <a id="lightbox-original" class="lb-btn secondary" href="" target="_blank" rel="noopener">새 탭에서 열기</a>
+    </div>
+  </div>
+</div>
+
+<script>
+// ====== 여기 두 값만 수정하세요 ======
+const API_KEY = "AIzaSyATvJRxKE8FACrTROTyAvYuSq1NzlcidTE";
+const FOLDER_ID = "1wQmjaMbJX7jKl1k2lJ7fLQG98lgW9l2O";
+// ====================================
+
+const statusEl = document.getElementById("status");
+const galleryEl = document.getElementById("gallery");
+const lightbox = document.getElementById("lightbox");
+const lightboxImg = document.getElementById("lightbox-img");
+const lightboxFilename = document.getElementById("lightbox-filename");
+const lightboxDownload = document.getElementById("lightbox-download");
+const lightboxOriginal = document.getElementById("lightbox-original");
+const lightboxClose = document.getElementById("lightbox-close");
+const lightboxContent = document.getElementById("lightbox-content");
+
+async function loadImages() {
+  const query = encodeURIComponent(`'${FOLDER_ID}' in parents and mimeType contains 'image/' and trashed = false`);
+  const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,thumbnailLink)&key=${API_KEY}&pageSize=1000`;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.error) {
+      statusEl.innerHTML = `<span class="error">오류: ${data.error.message}</span>`;
+      return;
+    }
+
+    const files = data.files || [];
+    if (files.length === 0) {
+      statusEl.textContent = "폴더에 이미지가 없습니다.";
+      return;
+    }
+
+    statusEl.textContent = `총 ${files.length}개의 이미지`;
+    galleryEl.innerHTML = "";
+
+    files.forEach(file => {
+      const fullUrl = `https://drive.google.com/uc?export=view&id=${file.id}`;
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `
+        <img src="${fullUrl}" loading="lazy" alt="${file.name}" onerror="this.src='${file.thumbnailLink || ''}'">
+        <div class="name">${file.name}</div>
+      `;
+      const downloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
+
+      card.addEventListener("click", () => {
+        lightboxImg.src = fullUrl;
+        lightboxFilename.textContent = file.name;
+        lightboxDownload.href = downloadUrl;
+        lightboxDownload.setAttribute("download", file.name);
+        lightboxOriginal.href = fullUrl;
+        lightbox.classList.add("open");
+      });
+      galleryEl.appendChild(card);
+    });
+
+  } catch (err) {
+    statusEl.innerHTML = `<span class="error">네트워크 오류: ${err.message}</span>`;
+  }
+}
+
+function closeLightbox() {
+  lightbox.classList.remove("open");
+  lightboxImg.src = "";
+}
+
+lightbox.addEventListener("click", closeLightbox);
+lightboxContent.addEventListener("click", (e) => e.stopPropagation());
+lightboxClose.addEventListener("click", closeLightbox);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeLightbox();
+});
+
+loadImages();
+</script>
+
+</body>
+</html>
